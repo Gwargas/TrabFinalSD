@@ -23,38 +23,34 @@
 from flask import Flask, render_template_string, request
 import requests
 
-# --- Configuração ---
+# --- Configuration ---
 app = Flask(__name__)
-# URL do NOSSO backend FastAPI. É aqui que a mágica da interação aplicação-aplicação acontece.
 BACKEND_URL = "http://127.0.0.1:8000/previsao"
 
-# --- Template HTML ---
-# Adicionamos o campo para "Tamanho das Ondas"
+# --- HTML Template ---
 HTML_TEMPLATE = """
 <!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Previsão do Tempo - Open-Meteo</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .container { max-width: 600px; width: 100%; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-    h1 { color: #1877f2; text-align: center; }
-    form { display: flex; gap: 10px; margin-bottom: 25px; }
-    input[type="text"] { flex-grow: 1; padding: 12px; border: 1px solid #dddfe2; border-radius: 6px; font-size: 16px; }
-    input[type="text"]:focus { border-color: #1877f2; outline: none; }
-    button { padding: 12px 20px; background-color: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
-    button:hover { background-color: #166fe5; }
-    .weather-info { margin-top: 20px; border-top: 1px solid #dddfe2; padding-top: 20px; }
-    .weather-info h2 { font-size: 24px; color: #1c1e21; }
-    .weather-info p { font-size: 18px; line-height: 1.6; }
-    .error { color: #fa3e3e; background-color: #ffebe_e; border: 1px solid #fa3e3e; padding: 12px; border-radius: 6px; text-align: center; }
+    body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; padding: 20px; }
+    .container { max-width: 600px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #007BFF; }
+    form { display: flex; gap: 10px; margin-bottom: 20px; }
+    input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+    button { padding: 10px 15px; background: #007BFF; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .weather-info { margin-top: 20px; }
+    .weather-info p { font-size: 16px; margin: 5px 0; }
+    .error { color: red; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Consulte a Previsão do Tempo</h1>
+    <h1>Previsão do Tempo</h1>
     <form method="post">
       <input type="text" name="cidade" placeholder="Digite o nome da cidade" required>
       <button type="submit">Buscar</button>
@@ -72,41 +68,35 @@ HTML_TEMPLATE = """
     {% endif %}
 
     {% if error %}
-      <div class="error">
-        <p><strong>Erro:</strong> {{ error }}</p>
-      </div>
+      <p class="error"><strong>Erro:</strong> {{ error }}</p>
     {% endif %}
   </div>
 </body>
 </html>
 """
 
-# --- Rota da Aplicação ---
+# --- Flask Route ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data = None
-    error_message = None
+    error = None
 
     if request.method == "POST":
         cidade = request.form.get("cidade")
         if cidade:
-            payload = {"cidade": cidade}
             try:
-                # O frontend (cliente) chama o backend (serviço)
+                payload = {"cidade": cidade}
                 response = requests.post(BACKEND_URL, json=payload)
-                
-                if response.status_code == 200:
-                    weather_data = response.json()
-                else:
-                    error_data = response.json()
-                    error_message = error_data.get("detail", "Ocorreu um erro ao buscar a previsão.")
-            
+                response.raise_for_status()
+                weather_data = response.json()
             except requests.exceptions.ConnectionError:
-                error_message = "Não foi possível conectar ao serviço de previsão. O backend está rodando?"
+                error = "Não foi possível conectar ao backend. Verifique se ele está rodando."
             except Exception as e:
-                error_message = f"Um erro inesperado ocorreu: {e}"
+                error = f"Ocorreu um erro: {e}"
+        else:
+            error = "Por favor, insira o nome de uma cidade."
 
-    return render_template_string(HTML_TEMPLATE, weather_data=weather_data, error=error_message)
+    return render_template_string(HTML_TEMPLATE, weather_data=weather_data, error=error)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

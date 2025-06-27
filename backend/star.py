@@ -1,19 +1,18 @@
-# star.py (ou backend_main.py) - VERSÃO CORRIGIDA
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import requests
-import logging # <<< MUDANÇA: Importando a biblioteca de logging
+import logging
 
-# Configurando um logger básico para ver os erros no console
+# --- Logger Configuration ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Configuração das APIs Externas (Open-Meteo) ---
+# --- External API URLs ---
 GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
-FORECAST_API_URL = "https://api.open-meteo.com/v1/forecast"
+FORECAST_API_URL = "https://marine-api.open-meteo.com/v1/marine"
+STANDARD_API_URL = "https://api.open-meteo.com/v1/forecast"
 
-# --- Modelos de Dados (Pydantic) ---
+# --- Pydantic Models ---
 class WeatherRequest(BaseModel):
     cidade: str
 
@@ -25,24 +24,18 @@ class WeatherResponse(BaseModel):
     prob_chuva: float
     tamanho_onda_m: float
 
-# --- Instância do Aplicativo FastAPI ---
-app = FastAPI(
-    title="API de Previsão do Tempo com Open-Meteo",
-    description="Um serviço que converte um nome de cidade em previsão do tempo, usando as APIs da Open-Meteo.",
-    version="1.0.0"
-)
+# --- FastAPI App ---
+app = FastAPI()
 
-# --- Endpoint da API ---
+@app.get("/")
+def root():
+    return {"message": "API de Previsão do Tempo está funcionando!"}
+
 @app.post("/previsao", response_model=WeatherResponse)
 def obter_previsao(request_data: WeatherRequest):
-    """
-    Este endpoint recebe o nome de uma cidade, busca suas coordenadas geográficas,
-    obtém a previsão do tempo e retorna os dados de forma estruturada.
-    """
     try:
-        # 1. Geocodificação
+        # 1. Geocoding API
         geocoding_params = {'name': request_data.cidade, 'count': 1}
-        # <<< MUDANÇA: Adicionado um timeout de 10 segundos
         geo_response = requests.get(GEOCODING_API_URL, params=geocoding_params, timeout=10)
         geo_response.raise_for_status()
         geo_data = geo_response.json()
@@ -55,45 +48,45 @@ def obter_previsao(request_data: WeatherRequest):
         longitude = location['longitude']
         local_nome = f"{location['name']}, {location.get('admin1', '')}, {location['country']}"
 
-        # 2. Previsão do Tempo
-        forecast_params = {
-            'latitude': latitude,
-            'longitude': longitude,
-            'current': 'temperature_2m,relative_humidity_2m,rain,wind_speed_10m',
-            'daily': 'wave_height_max',
-            'timezone': 'auto'
-        }
-        # <<< MUDANÇA: Adicionado um timeout de 10 segundos
-        forecast_response = requests.get(FORECAST_API_URL, params=forecast_params, timeout=10)
+        # 2. Determine API based on location
+        if abs(latitude) > 60 or abs(longitude) > 60:  # Example rule for coastal
+            forecast_url = FORECAST_API_URL
+            forecast_params = {
+                'latitude': latitude,
+                'longitude': longitude,
+                'hourly': 'wave_height,wind_speed,air_temperature',
+                'daily': 'wave_height_max',
+                'timezone': 'auto'
+            }
+        else:
+            forecast_url = STANDARD_API_URL
+            forecast_params = {
+                'latitude': latitude,
+                'longitude': longitude,
+                'hourly': 'temperature_2m,relative_humidity_2m,rain,wind_speed_10m',
+                'timezone': 'auto'
+            }
+
+        # 3. Fetch weather data
+        forecast_response = requests.get(forecast_url, params=forecast_params, timeout=10)
         forecast_response.raise_for_status()
         weather_data = forecast_response.json()
 
-        # 3. Processamento
-        current_weather = weather_data['current']
-        daily_weather = weather_data['daily']
-        prob_chuva_calculada = 100.0 if current_weather.get('rain', 0) > 0 else 0.0
+        # 4. Process response
+        current_weather = weather_data.get('current', {})
+        daily_weather = weather_data.get('daily', {})
+        tamanho_onda_m = daily_weather.get('wave_height_max', [0.0])[0] if 'wave_height_max' in daily_weather else 0.0
+        prob_chuva = 100.0 if current_weather.get('rain', 0.0) > 0 else 0.0
 
-        resposta_formatada = WeatherResponse(
+        return WeatherResponse(
             local=local_nome,
-            temperatura_c=current_weather['temperature_2m'],
-            umidade=current_weather['relative_humidity_2m'],
-            vento_kph=current_weather['wind_speed_10m'],
-            prob_chuva=prob_chuva_calculada,
-            tamanho_onda_m=daily_weather.get('wave_height_max', [0.0])[0] or 0.0
+            temperatura_c=current_weather.get('temperature_2m', 0.0),
+            umidade=current_weather.get('relative_humidity_2m', 0.0),
+            vento_kph=current_weather.get('wind_speed_10m', 0.0),
+            prob_chuva=prob_chuva,
+            tamanho_onda_m=tamanho_onda_m
         )
-        return resposta_formatada
-
-    except requests.exceptions.Timeout as e:
-        # <<< MUDANÇA: Capturando o erro de timeout especificamente
-        logger.error(f"Timeout ao conectar com a API externa: {e}")
-        raise HTTPException(status_code=504, detail="O serviço de meteorologia demorou muito para responder.")
 
     except requests.exceptions.RequestException as e:
-        # <<< MUDANÇA: Adicionado logging para ver o erro real no console
         logger.error(f"Erro de comunicação com a API externa: {e}")
-        raise HTTPException(status_code=503, detail=f"Erro ao comunicar com o serviço externo: {e}")
-        
-    except (KeyError, IndexError) as e:
-        # <<< MUDANÇA: Adicionado logging para ver o erro real no console
-        logger.error(f"Erro ao processar dados da API externa. Resposta recebida: {weather_data}. Erro: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar os dados recebidos da API externa: {e}")
+        raise HTTPException(status_code=503, detail="Erro ao comunicar com o serviço externo.")
