@@ -6,6 +6,7 @@
 #definindo uma rota para apenas não ir para 404
 #a rota é definida para a func logo abaixo
 #@app.route('/')
+
 #def index():
     #return render_template('index.html')
 

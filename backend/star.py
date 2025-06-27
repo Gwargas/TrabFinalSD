@@ -49,22 +49,23 @@ def obter_previsao(request_data: WeatherRequest):
         local_nome = f"{location['name']}, {location.get('admin1', '')}, {location['country']}"
 
         # 2. Determine API based on location
-        if abs(latitude) > 60 or abs(longitude) > 60:  # Example rule for coastal
+        if abs(latitude) > 100 or abs(longitude) > 120:  # Example rule for coastal
             forecast_url = FORECAST_API_URL
             forecast_params = {
                 'latitude': latitude,
                 'longitude': longitude,
-                'hourly': 'wave_height,wind_speed,air_temperature',
+                'hourly': 'temperature_2m,rain,wind_speed_10m',
                 'daily': 'wave_height_max',
-                'timezone': 'auto'
+                #'timezone': 'auto'
             }
         else:
             forecast_url = STANDARD_API_URL
             forecast_params = {
                 'latitude': latitude,
                 'longitude': longitude,
-                'hourly': 'temperature_2m,relative_humidity_2m,rain,wind_speed_10m',
-                'timezone': 'auto'
+                'current': 'temperature_2m,relative_humidity_2m,rain,wind_speed_10m'
+                #'hourly': 'temperature_2m,relative_humidity_2m,rain,wind_speed_10m',
+                #'timezone': 'auto'
             }
 
         # 3. Fetch weather data
@@ -74,6 +75,7 @@ def obter_previsao(request_data: WeatherRequest):
 
         # 4. Process response
         current_weather = weather_data.get('current', {})
+        if(forecast_url == FORECAST_API_URL ): hourly_weather = weather_data.get('hourly', {})
         daily_weather = weather_data.get('daily', {})
         tamanho_onda_m = daily_weather.get('wave_height_max', [0.0])[0] if 'wave_height_max' in daily_weather else 0.0
         prob_chuva = 100.0 if current_weather.get('rain', 0.0) > 0 else 0.0
