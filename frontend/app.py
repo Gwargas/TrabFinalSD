@@ -21,14 +21,15 @@
 
 # frontend_app.py
 
+# app.py - VERSÃO CORRIGIDA COM LÓGICA DE EXIBIÇÃO
+
 from flask import Flask, render_template_string, request
 import requests
 
-# --- Configuration ---
 app = Flask(__name__)
 BACKEND_URL = "http://127.0.0.1:8000/previsao"
 
-# --- HTML Template ---
+# --- Template HTML ---
 HTML_TEMPLATE = """
 <!doctype html>
 <html lang="pt-br">
@@ -40,64 +41,87 @@ HTML_TEMPLATE = """
     body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; padding: 20px; }
     .container { max-width: 600px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     h1 { text-align: center; color: #007BFF; }
-    form { display: flex; gap: 10px; margin-bottom: 20px; }
+    form { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+    .input-group { display: flex; gap: 10px; }
     input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
     button { padding: 10px 15px; background: #007BFF; color: white; border: none; border-radius: 4px; cursor: pointer; }
     button:hover { background: #0056b3; }
+    .checkbox-group { display: flex; align-items: center; gap: 5px; }
     .weather-info { margin-top: 20px; }
+    .weather-info h2 { font-size: 24px; }
     .weather-info p { font-size: 16px; margin: 5px 0; }
-    .error { color: red; }
+    .error { color: #d9534f; background-color: #f2dede; border: 1px solid #ebccd1; padding: 15px; border-radius: 4px; text-align: center; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Previsão do Tempo</h1>
     <form method="post">
-      <input type="text" name="cidade" placeholder="Digite o nome da cidade" required>
-      <button type="submit">Buscar</button>
+      <div class="input-group">
+        <input type="text" name="cidade" placeholder="Digite o nome da cidade" required>
+        <button type="submit">Buscar</button>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="is_coastal" name="is_coastal" value="true">
+        <label for="is_coastal">É uma cidade costeira? (para obter dados de ondas)</label>
+      </div>
     </form>
 
     {% if weather_data %}
       <div class="weather-info">
         <h2>Previsão para {{ weather_data.local }}</h2>
         <p><strong>🌡️ Temperatura:</strong> {{ weather_data.temperatura_c }} °C</p>
-        <p><strong>💧 Umidade:</strong> {{ weather_data.umidade }}%</p>
-        <p><strong>💨 Vento:</strong> {{ weather_data.vento_kph }} km/h</p>
-        <p><strong>🌊 Tamanho das Ondas:</strong> {{ weather_data.tamanho_onda_m }} m</p>
-        <p><strong>🌦️ Chance de Chuva:</strong> {{ weather_data.prob_chuva }}%</p>
+        
+        <!-- <<< MUDANÇA: Só exibe os campos se eles tiverem valor -->
+        {% if weather_data.umidade > 0 %}
+          <p><strong>💧 Umidade:</strong> {{ weather_data.umidade }}%</p>
+        {% endif %}
+        {% if weather_data.vento_kph > 0 %}
+          <p><strong>💨 Vento:</strong> {{ weather_data.vento_kph }} km/h</p>
+        {% endif %}
+        {% if weather_data.tamanho_onda_m > 0 %}
+          <p><strong>🌊 Tamanho da(s) Onda(s):</strong> {{ weather_data.tamanho_onda_m }} m</p>
+        {% endif %}
+        {% if weather_data.temperatura_a > 0 %}
+          <p><strong>🌡️ Temperatura da Agua:</strong> {{ weather_data.temperatura_a }} °C</p>
+        {% endif %}
+
+        <p><strong>🌦️ Chuva:</strong> {{ weather_data.prob_chuva }}</p>
       </div>
     {% endif %}
 
     {% if error %}
-      <p class="error"><strong>Erro:</strong> {{ error }}</p>
+      <div class="error">
+        <p><strong>Erro:</strong> {{ error }}</p>
+      </div>
     {% endif %}
   </div>
 </body>
 </html>
 """
 
-# --- Flask Route ---
+# --- Rota Flask (sem alterações) ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data = None
-    error = None
-
+    error_message = None
     if request.method == "POST":
         cidade = request.form.get("cidade")
+        is_coastal = True if request.form.get('is_coastal') else False
         if cidade:
+            payload = {"cidade": cidade, "is_coastal": is_coastal}
             try:
-                payload = {"cidade": cidade}
-                response = requests.post(BACKEND_URL, json=payload)
-                response.raise_for_status()
-                weather_data = response.json()
-            except requests.exceptions.ConnectionError:
-                error = "Não foi possível conectar ao backend. Verifique se ele está rodando."
-            except Exception as e:
-                error = f"Ocorreu um erro: {e}"
+                response = requests.post(BACKEND_URL, json=payload, timeout=15)
+                if response.status_code == 200:
+                    weather_data = response.json()
+                else:
+                    error_data = response.json()
+                    error_message = error_data.get("detail", "Ocorreu um erro desconhecido.")
+            except requests.exceptions.RequestException:
+                error_message = "Não foi possível conectar ao serviço de previsão."
         else:
-            error = "Por favor, insira o nome de uma cidade."
-
-    return render_template_string(HTML_TEMPLATE, weather_data=weather_data, error=error)
+            error_message = "Por favor, insira o nome de uma cidade."
+    return render_template_string(HTML_TEMPLATE, weather_data=weather_data, error=error_message)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
