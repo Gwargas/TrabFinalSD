@@ -1,9 +1,13 @@
+# app.py - VERSÃO ATUALIZADA PARA CONSUMIR A API RESTful
+
 from flask import Flask, render_template_string, request
 import requests
 
 app = Flask(__name__)
-BACKEND_SEARCH_URL = "http://127.0.0.1:8000/search-cities"
-BACKEND_PREVISAO_URL = "http://127.0.0.1:8000/previsao"
+
+# <<< MUDANÇA 1: ATUALIZAR A URL DE BUSCA >>>
+# A URL de previsão foi removida, pois agora ela é dinâmica (HATEOAS).
+BACKEND_CITIES_URL = "http://127.0.0.1:8000/cities" 
 
 # --- Template HTML ---
 HTML_TEMPLATE = """
@@ -63,13 +67,16 @@ HTML_TEMPLATE = """
                 {{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}
               </button>
               <form method="post" class="city-forecast-options">
+                <!-- <<< MUDANÇA 2: USAR O LINK HATEOAS FORNECIDO PELA API >>> -->
+                <!-- Removemos os inputs de lat/lon e adicionamos um para a URL completa da previsão -->
                 <input type="hidden" name="action" value="get_weather">
-                <input type="hidden" name="latitude" value="{{ city.latitude }}">
-                <input type="hidden" name="longitude" value="{{ city.longitude }}">
+                <input type="hidden" name="forecast_url" value="{{ city.links.forecast.href }}">
                 <input type="hidden" name="local" value="{{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}">
                 <input type="hidden" name="is_coastal" value="{{ is_coastal }}">
+                
                 <label for="forecast_days_{{city.id}}">Dias:</label>
                 <input type="number" id="forecast_days_{{city.id}}" name="forecast_days" min="1" max="16" value="7">
+                
                 <button type="submit">Obter Previsão</button>
               </form>
             </li>
@@ -78,26 +85,21 @@ HTML_TEMPLATE = """
       </div>
     {% endif %}
 
+    <!-- O restante do HTML não precisa de mudanças -->
     {% if weather_data %}
       <div class="weather-info">
         <h2>Previsão para {{ weather_data.local }}</h2>
         <div class="accordion">
           {% for day in weather_data.forecast %}
-            <!-- <<< MUDANÇA PRINCIPAL AQUI >>> -->
-            <!-- Adiciona um bloco if/elif/else para escolher o emoji com base na probabilidade de chuva -->
             <button class="accordion-button">
               <span>
-                {% if day.precipitation_probability_max <= 35 %}
-                  ☀️
-                {% elif day.precipitation_probability_max <= 65 %}
-                  ☁️
-                {% else %}
-                  🌧️
+                {% if day.precipitation_probability_max <= 35 %} ☀️
+                {% elif day.precipitation_probability_max <= 65 %} ☁️
+                {% else %} 🌧️
                 {% endif %}
               </span>
               {{ day.date }}
             </button>
-            
             <div class="accordion-panel">
               <p><strong>🌡️ Temperatura (Máx/Mín):</strong> {{ day.temperature_max }}°C / {{ day.temperature_min }}°C</p>
               {% if day.sensacao_termica is not none %}
@@ -119,53 +121,19 @@ HTML_TEMPLATE = """
     {% endif %}
   </div>
 
+  <!-- O JavaScript não precisa de mudanças -->
   <script>
-    // --- Script para o Acordeão de Resultados ---
     var acc = document.getElementsByClassName("accordion-button");
-    for (var i = 0; i < acc.length; i++) {
-      acc[i].addEventListener("click", function() {
-        this.classList.toggle("active");
-        var panel = this.nextElementSibling;
-        if (panel.style.display === "block") {
-          panel.style.display = "none";
-        } else {
-          panel.style.display = "block";
-        }
-      });
-    }
-
-    // --- Script para a Seleção de Cidades ---
+    for (var i = 0; i < acc.length; i++) { acc[i].addEventListener("click", function() { this.classList.toggle("active"); var panel = this.nextElementSibling; if (panel.style.display === "block") { panel.style.display = "none"; } else { panel.style.display = "block"; } }); }
     var citySelectors = document.getElementsByClassName("city-selector");
-    for (var i = 0; i < citySelectors.length; i++) {
-      citySelectors[i].addEventListener("click", function() {
-        var allOptions = document.getElementsByClassName("city-forecast-options");
-        for (var j = 0; j < allOptions.length; j++) {
-            if (allOptions[j] !== this.nextElementSibling) {
-                allOptions[j].style.display = "none";
-            }
-        }
-        var allSelectors = document.getElementsByClassName("city-selector");
-        for (var k = 0; k < allSelectors.length; k++) {
-            if (allSelectors[k] !== this) {
-                allSelectors[k].classList.remove("active");
-            }
-        }
-        this.classList.toggle("active");
-        var optionsPanel = this.nextElementSibling;
-        if (optionsPanel.style.display === "flex") {
-          optionsPanel.style.display = "none";
-        } else {
-          optionsPanel.style.display = "flex";
-        }
-      });
-    }
+    for (var i = 0; i < citySelectors.length; i++) { citySelectors[i].addEventListener("click", function() { var allOptions = document.getElementsByClassName("city-forecast-options"); for (var j = 0; j < allOptions.length; j++) { if (allOptions[j] !== this.nextElementSibling) { allOptions[j].style.display = "none"; } } var allSelectors = document.getElementsByClassName("city-selector"); for (var k = 0; k < allSelectors.length; k++) { if (allSelectors[k] !== this) { allSelectors[k].classList.remove("active"); } } this.classList.toggle("active"); var optionsPanel = this.nextElementSibling; if (optionsPanel.style.display === "flex") { optionsPanel.style.display = "none"; } else { optionsPanel.style.display = "flex"; } }); }
   </script>
 
 </body>
 </html>
 """
 
-# --- Rota Flask (sem alterações) ---
+# --- Rota Flask ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data, error_message, city_list = None, None, None
@@ -173,13 +141,14 @@ def index():
 
     if request.method == "POST":
         action = request.form.get("action")
-        is_coastal_checked = True if request.form.get('is_coastal') == 'true' or request.form.get('is_coastal') == 'True' else False
+        is_coastal_checked = True if request.form.get('is_coastal') == 'true' else False
 
         if action == "search_cities":
             cidade = request.form.get("cidade")
             if cidade:
                 try:
-                    response = requests.get(BACKEND_SEARCH_URL, params={'name': cidade}, timeout=15)
+                    # A URL de busca foi atualizada
+                    response = requests.get(BACKEND_CITIES_URL, params={'name': cidade}, timeout=15)
                     if response.status_code == 200:
                         city_list = response.json()
                         if not city_list:
@@ -192,15 +161,22 @@ def index():
                 error_message = "Por favor, insira o nome de uma cidade."
 
         elif action == "get_weather":
-            payload = {
-                "latitude": float(request.form.get("latitude")),
-                "longitude": float(request.form.get("longitude")),
+            # <<< MUDANÇA 3: MUDAR DE POST PARA GET E USAR PARÂMETROS DE URL >>>
+            
+            # 1. Obter a URL de previsão diretamente do formulário (HATEOAS)
+            forecast_url = request.form.get("forecast_url")
+
+            # 2. Montar um dicionário com os parâmetros *adicionais* para a URL
+            params = {
+                "forecast_days": int(request.form.get("forecast_days", 7)),
                 "is_coastal": is_coastal_checked,
-                "local": request.form.get("local"),
-                "forecast_days": int(request.form.get("forecast_days", 1))
+                "local": request.form.get("local")
             }
+            
             try:
-                response = requests.post(BACKEND_PREVISAO_URL, json=payload, timeout=15)
+                # 3. Fazer a requisição com GET, passando os parâmetros extras
+                response = requests.get(forecast_url, params=params, timeout=15)
+                
                 if response.status_code == 200:
                     weather_data = response.json()
                 else:

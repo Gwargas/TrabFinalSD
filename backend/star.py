@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+# star.py - VERSÃO RESTful CORRIGIDA
+
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import requests
@@ -13,20 +15,23 @@ MARINE_API_URL = "https://marine-api.open-meteo.com/v1/marine"
 STANDARD_API_URL = "https://api.open-meteo.com/v1/forecast"
 
 # --- Modelos Pydantic ---
-class CityInfo(BaseModel):
+class Link(BaseModel):
+    href: str
+    rel: str
+    type: str
+
+class CityLinks(BaseModel):
+    self: Link
+    forecast: Link
+
+class CityInfoWithLinks(BaseModel):
     id: int
     name: str
     latitude: float
     longitude: float
     country: str
     admin1: Optional[str] = None
-
-class WeatherRequest(BaseModel):
-    latitude: float
-    longitude: float
-    is_coastal: bool
-    local: str
-    forecast_days: Optional[int] = 1
+    links: CityLinks
 
 class DailyForecast(BaseModel):
     date: str
@@ -40,30 +45,47 @@ class DailyForecast(BaseModel):
 class WeatherResponse(BaseModel):
     local: str
     forecast: List[DailyForecast]
+    links: List[Link]
 
 # --- Aplicação FastAPI ---
-app = FastAPI(title="API de Previsão do Tempo")
+app = FastAPI(title="API de Previsão do Tempo RESTful")
 
-@app.get("/search-cities", response_model=List[CityInfo])
-def search_cities(name: str):
+@app.get("/cities", response_model=List[CityInfoWithLinks])
+def search_cities(name: str, request: Request):
     params = {'name': name, 'count': 10, 'language': 'pt', 'format': 'json'}
     try:
         response = requests.get(GEOCODING_API_URL, params=params, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        return [CityInfo(**city) for city in data.get('results', [])]
+        results = response.json().get('results', [])
+        
+        cities_with_links = []
+        for city in results:
+            city_id = city['id']
+            base_url = str(request.base_url)
+            city_links = CityLinks(
+                self=Link(href=f"{base_url}cities/{city_id}", rel="self", type="GET"),
+                forecast=Link(href=f"{base_url}forecast?latitude={city['latitude']}&longitude={city['longitude']}", rel="forecast", type="GET")
+            )
+            cities_with_links.append(
+                CityInfoWithLinks(**city, links=city_links)
+            )
+            print(cities_with_links)
+        return cities_with_links
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Erro na API de Geocodificação: {e}")
         raise HTTPException(status_code=503, detail="Erro ao comunicar com o serviço de geocodificação.")
 
-@app.post("/previsao", response_model=WeatherResponse)
-def obter_previsao(request_data: WeatherRequest):
-    forecast_days = max(1, min(request_data.forecast_days, 16))
+# <<< A CORREÇÃO ESTÁ AQUI >>>
+# O argumento 'request: Request' foi movido para antes dos argumentos com valores padrão.
+@app.get("/forecast", response_model=WeatherResponse)
+def get_forecast(latitude: float, longitude: float, request: Request, forecast_days: int = 7, is_coastal: bool = False, local: str = ""):
+    forecast_days = max(1, min(forecast_days, 16))
     daily_params = "temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max"
     
     standard_api_params = {
-        'latitude': request_data.latitude,
-        'longitude': request_data.longitude,
+        'latitude': latitude,
+        'longitude': longitude,
         'daily': daily_params,
         'hourly': 'apparent_temperature',
         'timezone': 'auto',
@@ -71,39 +93,26 @@ def obter_previsao(request_data: WeatherRequest):
     }
     
     try:
-        #API padrão(forecast)
         standard_response = requests.get(STANDARD_API_URL, params=standard_api_params, timeout=10)
         standard_response.raise_for_status()
         json_response = standard_response.json()
         standard_data = json_response.get('daily', {})
         hourly_data = json_response.get('hourly', {})
 
-        #API marítima se for costeira
         marine_data = {}
-        if request_data.is_coastal:
-            marine_api_params = {
-                'latitude': request_data.latitude,
-                'longitude': request_data.longitude,
-                'daily': 'wave_height_max',
-                'timezone': 'auto',
-                'forecast_days': forecast_days
-            }
+        if is_coastal:
+            marine_api_params = {'latitude': latitude, 'longitude': longitude, 'daily': 'wave_height_max', 'timezone': 'auto', 'forecast_days': forecast_days}
             marine_response = requests.get(MARINE_API_URL, params=marine_api_params, timeout=10)
             marine_response.raise_for_status()
             marine_data = marine_response.json().get('daily', {})
 
-        #lista pras previsões dos dias entre 0-16
         forecast_list = []
         num_days = len(standard_data.get('time', []))
         apparent_temp_list = hourly_data.get('apparent_temperature', [])
 
         for i in range(num_days):
             hourly_index = i * 24
-            
-            sensacao = None
-            if hourly_index < len(apparent_temp_list):
-                sensacao = apparent_temp_list[hourly_index]
-
+            sensacao = apparent_temp_list[hourly_index] if hourly_index < len(apparent_temp_list) else None
             daily_entry = DailyForecast(
                 date=standard_data['time'][i],
                 temperature_max=standard_data['temperature_2m_max'][i],
@@ -114,9 +123,12 @@ def obter_previsao(request_data: WeatherRequest):
                 sensacao_termica=sensacao
             )
             forecast_list.append(daily_entry)
-            print(forecast_list)
-                        
-        return WeatherResponse(local=request_data.local, forecast=forecast_list)
+        
+        self_link = Link(href=str(request.url), rel="self", type="GET")
+        display_local = local if local else f"{latitude}, {longitude}"
+        print(self_link)
+
+        return WeatherResponse(local=display_local, forecast=forecast_list, links=[self_link])
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Erro de comunicação com a API externa: {e}")
