@@ -30,37 +30,10 @@ HTML_TEMPLATE = """
     .error { color: #d9534f; background-color: #f2dede; border: 1px solid #ebccd1; padding: 15px; border-radius: 4px; text-align: center; }
     .city-list ul { list-style: none; padding: 0; }
     .city-list li { margin-bottom: 10px; }
-    
-    /* <<< MUDANÇA 1: NOVOS ESTILOS PARA A SELEÇÃO DE CIDADE >>> */
-    .city-selector {
-        width: 100%;
-        background: none;
-        border: 1px solid #007BFF;
-        color: #007BFF;
-        text-align: left;
-        padding: 10px;
-        font-size: 16px;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    .city-selector:hover, .city-selector.active {
-        background-color: #e6f2ff;
-    }
-    .city-forecast-options {
-        display: none; /* Escondido por padrão */
-        padding: 15px;
-        margin-top: -1px;
-        border: 1px solid #ddd;
-        border-radius: 0 0 4px 4px;
-        background-color: #f9f9f9;
-        flex-direction: row;
-        align-items: center;
-        gap: 10px;
-    }
-
-    /* Estilos do Acordeão (sem alterações) */
-    .accordion-button { background-color: #007BFF; color: white; cursor: pointer; padding: 18px; width: 100%; border: none; text-align: left; outline: none; font-size: 18px; transition: background-color 0.2s; border-radius: 4px; margin-top: 8px; }
+    .city-selector { width: 100%; background: none; border: 1px solid #007BFF; color: #007BFF; text-align: left; padding: 10px; font-size: 16px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+    .city-selector:hover, .city-selector.active { background-color: #e6f2ff; }
+    .city-forecast-options { display: none; padding: 15px; margin-top: -1px; border: 1px solid #ddd; border-radius: 0 0 4px 4px; background-color: #f9f9f9; flex-direction: row; align-items: center; gap: 10px; }
+    .accordion-button { display: flex; align-items: center; gap: 15px; background-color: #007BFF; color: white; cursor: pointer; padding: 18px; width: 100%; border: none; text-align: left; outline: none; font-size: 18px; transition: background-color 0.2s; border-radius: 4px; margin-top: 8px; }
     .accordion-button:hover, .accordion-button.active { background-color: #0056b3; }
     .accordion-panel { padding: 0 18px; background-color: #f9f9f9; display: none; overflow: hidden; border: 1px solid #ddd; border-top: none; border-radius: 0 0 4px 4px; }
     .accordion-panel p { margin: 12px 0; font-size: 16px; }
@@ -86,25 +59,19 @@ HTML_TEMPLATE = """
       <div class="city-list">
         <h3>Por favor, selecione a cidade correta:</h3>
         <ul>
-          <!-- <<< MUDANÇA 2: ESTRUTURA HTML DA LISTA DE CIDADES ALTERADA >>> -->
           {% for city in city_list %}
             <li>
-              <!-- Este botão apenas MOSTRA as opções abaixo -->
               <button type="button" class="city-selector">
                 {{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}
               </button>
-              
-              <!-- Este formulário fica ESCONDIDO e só aparece ao clicar no botão acima -->
               <form method="post" class="city-forecast-options">
                 <input type="hidden" name="action" value="get_weather">
                 <input type="hidden" name="latitude" value="{{ city.latitude }}">
                 <input type="hidden" name="longitude" value="{{ city.longitude }}">
                 <input type="hidden" name="local" value="{{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}">
                 <input type="hidden" name="is_coastal" value="{{ is_coastal }}">
-                
                 <label for="forecast_days_{{city.id}}">Dias:</label>
                 <input type="number" id="forecast_days_{{city.id}}" name="forecast_days" min="1" max="16" value="7">
-                
                 <button type="submit">Obter Previsão</button>
               </form>
             </li>
@@ -113,13 +80,26 @@ HTML_TEMPLATE = """
       </div>
     {% endif %}
 
-    <!-- Acordeão de resultados (sem alterações) -->
     {% if weather_data %}
       <div class="weather-info">
         <h2>Previsão para {{ weather_data.local }}</h2>
         <div class="accordion">
           {% for day in weather_data.forecast %}
-            <button class="accordion-button">{{ day.date }}</button>
+            <!-- <<< MUDANÇA PRINCIPAL AQUI >>> -->
+            <!-- Adiciona um bloco if/elif/else para escolher o emoji com base na probabilidade de chuva -->
+            <button class="accordion-button">
+              <span>
+                {% if day.precipitation_probability_max <= 35 %}
+                  ☀️
+                {% elif day.precipitation_probability_max <= 65 %}
+                  ☁️
+                {% else %}
+                  🌧️
+                {% endif %}
+              </span>
+              {{ day.date }}
+            </button>
+            
             <div class="accordion-panel">
               <p><strong>🌡️ Temperatura (Máx/Mín):</strong> {{ day.temperature_max }}°C / {{ day.temperature_min }}°C</p>
               {% if day.sensacao_termica is not none %}
@@ -141,7 +121,6 @@ HTML_TEMPLATE = """
     {% endif %}
   </div>
 
-  <!-- <<< MUDANÇA 3: SCRIPTS ATUALIZADOS >>> -->
   <script>
     // --- Script para o Acordeão de Resultados ---
     var acc = document.getElementsByClassName("accordion-button");
@@ -157,27 +136,22 @@ HTML_TEMPLATE = """
       });
     }
 
-    // --- Novo Script para a Seleção de Cidades ---
+    // --- Script para a Seleção de Cidades ---
     var citySelectors = document.getElementsByClassName("city-selector");
     for (var i = 0; i < citySelectors.length; i++) {
       citySelectors[i].addEventListener("click", function() {
-        // Primeiro, esconde todas as outras opções abertas
         var allOptions = document.getElementsByClassName("city-forecast-options");
         for (var j = 0; j < allOptions.length; j++) {
-            // Esconde se não for o que foi clicado
             if (allOptions[j] !== this.nextElementSibling) {
                 allOptions[j].style.display = "none";
             }
         }
-        // Remove a classe 'active' de todos os outros botões
         var allSelectors = document.getElementsByClassName("city-selector");
         for (var k = 0; k < allSelectors.length; k++) {
             if (allSelectors[k] !== this) {
                 allSelectors[k].classList.remove("active");
             }
         }
-
-        // Agora, mostra ou esconde a opção do botão que foi clicado
         this.classList.toggle("active");
         var optionsPanel = this.nextElementSibling;
         if (optionsPanel.style.display === "flex") {
