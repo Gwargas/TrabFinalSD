@@ -1,12 +1,9 @@
-# app.py - VERSÃO ATUALIZADA PARA CONSUMIR A API RESTful
-
 from flask import Flask, render_template_string, request
 import requests
 
 app = Flask(__name__)
 
-# <<< MUDANÇA 1: ATUALIZAR A URL DE BUSCA >>>
-# A URL de previsão foi removida, pois agora ela é dinâmica (HATEOAS).
+
 BACKEND_CITIES_URL = "http://127.0.0.1:8000/cities" 
 
 # --- Template HTML ---
@@ -147,7 +144,6 @@ def index():
             cidade = request.form.get("cidade")
             if cidade:
                 try:
-                    # A URL de busca foi atualizada
                     response = requests.get(BACKEND_CITIES_URL, params={'name': cidade}, timeout=15)
                     if response.status_code == 200:
                         city_list = response.json()
@@ -161,12 +157,9 @@ def index():
                 error_message = "Por favor, insira o nome de uma cidade."
 
         elif action == "get_weather":
-            # <<< MUDANÇA 3: MUDAR DE POST PARA GET E USAR PARÂMETROS DE URL >>>
             
-            # 1. Obter a URL de previsão diretamente do formulário (HATEOAS)
             forecast_url = request.form.get("forecast_url")
 
-            # 2. Montar um dicionário com os parâmetros *adicionais* para a URL
             params = {
                 "forecast_days": int(request.form.get("forecast_days", 7)),
                 "is_coastal": is_coastal_checked,
@@ -174,7 +167,6 @@ def index():
             }
             
             try:
-                # 3. Fazer a requisição com GET, passando os parâmetros extras
                 response = requests.get(forecast_url, params=params, timeout=15)
                 
                 if response.status_code == 200:

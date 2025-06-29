@@ -1,5 +1,3 @@
-# star.py - VERSÃO RESTful CORRIGIDA
-
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
@@ -76,8 +74,7 @@ def search_cities(name: str, request: Request):
         logger.error(f"Erro na API de Geocodificação: {e}")
         raise HTTPException(status_code=503, detail="Erro ao comunicar com o serviço de geocodificação.")
 
-# <<< A CORREÇÃO ESTÁ AQUI >>>
-# O argumento 'request: Request' foi movido para antes dos argumentos com valores padrão.
+
 @app.get("/forecast", response_model=WeatherResponse)
 def get_forecast(latitude: float, longitude: float, request: Request, forecast_days: int = 7, is_coastal: bool = False, local: str = ""):
     forecast_days = max(1, min(forecast_days, 16))
