@@ -118,7 +118,8 @@ def obter_previsao(request_data: WeatherRequest):
                 sensacao_termica=sensacao
             )
             forecast_list.append(daily_entry)
-            
+            print(forecast_list)
+                        
         return WeatherResponse(local=request_data.local, forecast=forecast_list)
 
     except requests.exceptions.RequestException as e:
