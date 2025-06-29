@@ -25,11 +25,14 @@
 
 # app.py - VERSÃO FINAL COM FLUXO DE DOIS PASSOS
 
+# app.py - VERSÃO FINAL COM PREVISÃO EM TABELA
+
+# app.py - VERSÃO FINAL COM ACORDEÃO INTERATIVO
+
 from flask import Flask, render_template_string, request
 import requests
 
 app = Flask(__name__)
-# URLs do nosso backend
 BACKEND_SEARCH_URL = "http://127.0.0.1:8000/search-cities"
 BACKEND_PREVISAO_URL = "http://127.0.0.1:8000/previsao"
 
@@ -43,30 +46,61 @@ HTML_TEMPLATE = """
   <title>Previsão do Tempo - Open-Meteo</title>
   <style>
     body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; padding: 20px; }
-    .container { max-width: 600px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     h1 { text-align: center; color: #007BFF; }
     form { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
-    .input-group { display: flex; gap: 10px; }
+    .input-group { display: flex; gap: 10px; align-items: center; }
     input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+    input[type="number"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 80px; }
     button { padding: 10px 15px; background: #007BFF; color: white; border: none; border-radius: 4px; cursor: pointer; }
     button:hover { background: #0056b3; }
-    .checkbox-group { display: flex; align-items: center; gap: 5px; }
     .weather-info, .city-list { margin-top: 20px; }
-    .weather-info h2, .city-list h3 { font-size: 22px; }
-    .weather-info p { font-size: 16px; margin: 5px 0; }
+    .weather-info h2 { font-size: 22px; }
     .error { color: #d9534f; background-color: #f2dede; border: 1px solid #ebccd1; padding: 15px; border-radius: 4px; text-align: center; }
-    /* Estilos para a lista de cidades */
     .city-list ul { list-style: none; padding: 0; }
     .city-list li { margin-bottom: 10px; }
-    .link-button { background: none; border: 1px solid #007BFF; color: #007BFF; width: 100%; text-align: left; padding: 10px; font-size: 16px; border-radius: 4px; }
+    .city-form { display: flex; gap: 10px; align-items: center; }
+    .link-button { flex-grow: 1; background: none; border: 1px solid #007BFF; color: #007BFF; text-align: left; padding: 10px; font-size: 16px; border-radius: 4px; }
     .link-button:hover { background: #e6f2ff; }
+
+    /* <<< MUDANÇA 1: ESTILOS PARA O ACORDEÃO >>> */
+    .accordion-button {
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 18px;
+      transition: background-color 0.2s;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+    .accordion-button:hover, .accordion-button.active {
+      background-color: #0056b3;
+    }
+    .accordion-panel {
+      padding: 0 18px;
+      background-color: #f9f9f9;
+      display: none; /* Escondido por padrão */
+      overflow: hidden;
+      border: 1px solid #ddd;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+    }
+    .accordion-panel p {
+        margin: 12px 0;
+        font-size: 16px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Previsão do Tempo</h1>
     
-    <!-- Formulário de Busca Inicial -->
+    <!-- Formulário de busca (sem alterações) -->
     <form method="post">
       <input type="hidden" name="action" value="search_cities">
       <div class="input-group">
@@ -75,18 +109,18 @@ HTML_TEMPLATE = """
       </div>
       <div class="checkbox-group">
         <input type="checkbox" id="is_coastal" name="is_coastal" value="true" {% if is_coastal %}checked{% endif %}>
-        <label for="is_coastal">É uma cidade costeira? (para obter dados de ondas)</label>
+        <label for="is_coastal">É uma cidade costeira?</label>
       </div>
     </form>
 
-    <!-- Exibe a lista de cidades para seleção -->
+    <!-- Lista de cidades (sem alterações) -->
     {% if city_list %}
       <div class="city-list">
         <h3>Por favor, selecione a cidade correta:</h3>
         <ul>
           {% for city in city_list %}
             <li>
-              <form method="post">
+              <form method="post" class="city-form">
                 <input type="hidden" name="action" value="get_weather">
                 <input type="hidden" name="latitude" value="{{ city.latitude }}">
                 <input type="hidden" name="longitude" value="{{ city.longitude }}">
@@ -95,6 +129,8 @@ HTML_TEMPLATE = """
                 <button type="submit" class="link-button">
                   {{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}
                 </button>
+                <label for="forecast_days_{{city.id}}">Dias:</label>
+                <input type="number" id="forecast_days_{{city.id}}" name="forecast_days" min="1" max="16" value="7">
               </form>
             </li>
           {% endfor %}
@@ -102,33 +138,68 @@ HTML_TEMPLATE = """
       </div>
     {% endif %}
 
-    <!-- Exibe a previsão do tempo final -->
+    <!-- <<< MUDANÇA 2: ESTRUTURA DO ACORDEÃO AO INVÉS DA TABELA >>> -->
     {% if weather_data %}
       <div class="weather-info">
         <h2>Previsão para {{ weather_data.local }}</h2>
-        <p><strong>🌡️ Temperatura do Ar:</strong> {{ weather_data.temperatura_c }} °C</p>
-        <p><strong>🌡️ Sensação Térmica:</strong> {{ weather_data.sensacao }} °C</p>
-        <p><strong>🌡️ Taxa Raios Uv:</strong> {{ weather_data.taxa_uv }}</p>
-        {% if weather_data.umidade > 0 %}<p><strong>💧 Umidade:</strong> {{ weather_data.umidade }}%</p>{% endif %}
-        {% if weather_data.vento_kph > 0 %}<p><strong>💨 Vento:</strong> {{ weather_data.vento_kph }} km/h</p>{% endif %}
-        {% if weather_data.tamanho_onda_m > 0 %}<p><strong>🌊 Tamanho da(s) Onda(s):</strong> {{ weather_data.tamanho_onda_m }} m</p>{% endif %}
-        {% if weather_data.temperatura_a > 0 %}<p><strong>🌡️ Temperatura da Água:</strong> {{ weather_data.temperatura_a }} °C</p>{% endif %}
-        <p><strong>🌦️ Média da probabilidade de Chuva hoje:</strong> {{ weather_data.precipitation_prob}} %</p>
-        <p><strong>🌦️ Chovendo:</strong> {{ 'Sim' if weather_data.prob_chuva > 0 else 'Não' }}</p>
-        
+        <div class="accordion">
+          {% for day in weather_data.forecast %}
+            <!-- O botão que o usuário clica -->
+            <button class="accordion-button">{{ day.date }}</button>
+            
+            <!-- O painel escondido com os detalhes -->
+            <div class="accordion-panel">
+              <p><strong>🌡️ Temperatura (Máx/Mín):</strong> {{ day.temperature_max }}°C / {{ day.temperature_min }}°C</p>
+              {% if day.sensacao_termica is not none %}
+                <p><strong>🌡️ Sensação Térmica (Início do dia):</strong> {{ day.sensacao_termica }}°C</p>
+              {% endif %}
+              <p><strong>☀️ Índice UV (Máx):</strong> {{ day.uv_index_max }}</p>
+              <p><strong>💧 Chance de Chuva (Máx):</strong> {{ day.precipitation_probability_max }}%</p>
+              {% if day.wave_height_max is not none %}
+                <p><strong>🌊 Ondas (Máx):</strong> {{ day.wave_height_max }} m</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
 
-    <!-- Exibe erros -->
     {% if error %}
       <div class="error"><p><strong>Erro:</strong> {{ error }}</p></div>
     {% endif %}
   </div>
+
+  <!-- <<< MUDANÇA 3: SCRIPT JAVASCRIPT PARA CONTROLAR O ACORDEÃO >>> -->
+  <script>
+    // Pega todos os botões do acordeão
+    var acc = document.getElementsByClassName("accordion-button");
+    var i;
+
+    for (i = 0; i < acc.length; i++) {
+      // Adiciona um "escutador" de clique a cada botão
+      acc[i].addEventListener("click", function() {
+        // Alterna a classe 'active' no botão para mudar seu estilo (ex: cor de fundo)
+        this.classList.toggle("active");
+
+        // Pega o painel de detalhes que vem logo depois do botão
+        var panel = this.nextElementSibling;
+
+        // Se o painel já estiver visível, esconde-o
+        if (panel.style.display === "block") {
+          panel.style.display = "none";
+        } else {
+          // Se estiver escondido, mostra-o
+          panel.style.display = "block";
+        }
+      });
+    }
+  </script>
+
 </body>
 </html>
 """
 
-# --- Rota Flask ---
+# --- Rota Flask (sem alterações) ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data, error_message, city_list = None, None, None
@@ -136,7 +207,6 @@ def index():
 
     if request.method == "POST":
         action = request.form.get("action")
-        # Mantém o estado do checkbox entre as requisições
         is_coastal_checked = True if request.form.get('is_coastal') == 'true' or request.form.get('is_coastal') == 'True' else False
 
         if action == "search_cities":
@@ -160,7 +230,8 @@ def index():
                 "latitude": float(request.form.get("latitude")),
                 "longitude": float(request.form.get("longitude")),
                 "is_coastal": is_coastal_checked,
-                "local": request.form.get("local")
+                "local": request.form.get("local"),
+                "forecast_days": int(request.form.get("forecast_days", 1))
             }
             try:
                 response = requests.post(BACKEND_PREVISAO_URL, json=payload, timeout=15)
