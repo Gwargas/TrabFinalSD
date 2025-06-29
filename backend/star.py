@@ -67,7 +67,7 @@ def search_cities(name: str, request: Request):
             cities_with_links.append(
                 CityInfoWithLinks(**city, links=city_links)
             )
-            print(cities_with_links)
+            
         return cities_with_links
 
     except requests.exceptions.RequestException as e:
@@ -76,7 +76,7 @@ def search_cities(name: str, request: Request):
 
 
 @app.get("/forecast", response_model=WeatherResponse)
-def get_forecast(latitude: float, longitude: float, request: Request, forecast_days: int = 7, is_coastal: bool = False, local: str = ""):
+def get_forecast(latitude: float, longitude: float, request: Request, forecast_days: int = 7, local: str = ""):
     forecast_days = max(1, min(forecast_days, 16))
     daily_params = "temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max"
     
@@ -97,15 +97,24 @@ def get_forecast(latitude: float, longitude: float, request: Request, forecast_d
         hourly_data = json_response.get('hourly', {})
 
         marine_data = {}
-        if is_coastal:
-            marine_api_params = {'latitude': latitude, 'longitude': longitude, 'daily': 'wave_height_max', 'timezone': 'auto', 'forecast_days': forecast_days}
-            marine_response = requests.get(MARINE_API_URL, params=marine_api_params, timeout=10)
-            marine_response.raise_for_status()
-            marine_data = marine_response.json().get('daily', {})
+        
+        
+        marine_api_params = {'latitude': latitude, 'longitude': longitude, 
+                            'daily': 'wave_height_max', 
+                            'timezone': 'auto', 
+                            'forecast_days': forecast_days
+                            }
+        marine_response = requests.get(MARINE_API_URL, params=marine_api_params, timeout=10)
+        marine_response.raise_for_status()
+        marine_data = marine_response.json().get('daily', {})
+            
+                
+
 
         forecast_list = []
         num_days = len(standard_data.get('time', []))
         apparent_temp_list = hourly_data.get('apparent_temperature', [])
+
 
         for i in range(num_days):
             hourly_index = i * 24
@@ -119,11 +128,11 @@ def get_forecast(latitude: float, longitude: float, request: Request, forecast_d
                 wave_height_max=marine_data.get('wave_height_max', [None]*num_days)[i],
                 sensacao_termica=sensacao
             )
+            #print(daily_entry)
             forecast_list.append(daily_entry)
         
         self_link = Link(href=str(request.url), rel="self", type="GET")
         display_local = local if local else f"{latitude}, {longitude}"
-        print(self_link)
 
         return WeatherResponse(local=display_local, forecast=forecast_list, links=[self_link])
 

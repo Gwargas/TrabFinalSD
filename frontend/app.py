@@ -3,8 +3,9 @@ import requests
 
 app = Flask(__name__)
 
-
-BACKEND_CITIES_URL = "http://127.0.0.1:8000/cities" 
+# URLs do backend
+BACKEND_CITIES_URL = "http://127.0.0.1:8000/cities"
+BACKEND_FORECAST_URL = "http://127.0.0.1:8000/forecast"
 
 # --- Template HTML ---
 HTML_TEMPLATE = """
@@ -36,21 +37,38 @@ HTML_TEMPLATE = """
     .accordion-button:hover, .accordion-button.active { background-color: #0056b3; }
     .accordion-panel { padding: 0 18px; background-color: #f9f9f9; display: none; overflow: hidden; border: 1px solid #ddd; border-top: none; border-radius: 0 0 4px 4px; }
     .accordion-panel p { margin: 12px 0; font-size: 16px; }
+
+    .header-actions { text-align: center; margin-bottom: 20px; }
+    .home-button {
+        display: inline-block;
+        padding: 10px 20px;
+        background: #007BFF;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 16px;
+        transition: background-color 0.2s;
+    }
+    .home-button:hover {
+        background: #0056b3;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Previsão do Tempo</h1>
+
+    {% if city_list or weather_data %}
+      <div class="header-actions">
+        <a href="/" class="home-button">↩️ Voltar ao Início</a>
+      </div>
+    {% endif %}
     
     <form method="post">
       <input type="hidden" name="action" value="search_cities">
       <div class="input-group">
         <input type="text" name="cidade" placeholder="Digite o nome da cidade" required>
         <button type="submit">Buscar</button>
-      </div>
-      <div class="checkbox-group">
-        <input type="checkbox" id="is_coastal" name="is_coastal" value="true" {% if is_coastal %}checked{% endif %}>
-        <label for="is_coastal">É uma cidade costeira?</label>
       </div>
     </form>
 
@@ -64,12 +82,10 @@ HTML_TEMPLATE = """
                 {{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}
               </button>
               <form method="post" class="city-forecast-options">
-                <!-- <<< MUDANÇA 2: USAR O LINK HATEOAS FORNECIDO PELA API >>> -->
-                <!-- Removemos os inputs de lat/lon e adicionamos um para a URL completa da previsão -->
                 <input type="hidden" name="action" value="get_weather">
-                <input type="hidden" name="forecast_url" value="{{ city.links.forecast.href }}">
+                <input type="hidden" name="latitude" value="{{ city.latitude }}">
+                <input type="hidden" name="longitude" value="{{ city.longitude }}">
                 <input type="hidden" name="local" value="{{ city.name }}{% if city.admin1 %}, {{ city.admin1 }}{% endif %}, {{ city.country }}">
-                <input type="hidden" name="is_coastal" value="{{ is_coastal }}">
                 
                 <label for="forecast_days_{{city.id}}">Dias:</label>
                 <input type="number" id="forecast_days_{{city.id}}" name="forecast_days" min="1" max="16" value="7">
@@ -82,7 +98,6 @@ HTML_TEMPLATE = """
       </div>
     {% endif %}
 
-    <!-- O restante do HTML não precisa de mudanças -->
     {% if weather_data %}
       <div class="weather-info">
         <h2>Previsão para {{ weather_data.local }}</h2>
@@ -106,6 +121,8 @@ HTML_TEMPLATE = """
               <p><strong>💧 Chance de Chuva (Máx):</strong> {{ day.precipitation_probability_max }}%</p>
               {% if day.wave_height_max is not none %}
                 <p><strong>🌊 Ondas (Máx):</strong> {{ day.wave_height_max }} m</p>
+              {% else %} <p><strong>🌊 Sem informações sobre ondas no local!</p>
+                   
               {% endif %}
             </div>
           {% endfor %}
@@ -118,7 +135,6 @@ HTML_TEMPLATE = """
     {% endif %}
   </div>
 
-  <!-- O JavaScript não precisa de mudanças -->
   <script>
     var acc = document.getElementsByClassName("accordion-button");
     for (var i = 0; i < acc.length; i++) { acc[i].addEventListener("click", function() { this.classList.toggle("active"); var panel = this.nextElementSibling; if (panel.style.display === "block") { panel.style.display = "none"; } else { panel.style.display = "block"; } }); }
@@ -130,16 +146,14 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- Rota Flask ---
+# --- Rota Flask (Nenhuma mudança necessária aqui) ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data, error_message, city_list = None, None, None
-    is_coastal_checked = False
 
     if request.method == "POST":
         action = request.form.get("action")
-        is_coastal_checked = True if request.form.get('is_coastal') == 'true' else False
-
+        
         if action == "search_cities":
             cidade = request.form.get("cidade")
             if cidade:
@@ -157,17 +171,15 @@ def index():
                 error_message = "Por favor, insira o nome de uma cidade."
 
         elif action == "get_weather":
-            
-            forecast_url = request.form.get("forecast_url")
-
             params = {
+                "latitude": float(request.form.get("latitude")),
+                "longitude": float(request.form.get("longitude")),
                 "forecast_days": int(request.form.get("forecast_days", 7)),
-                "is_coastal": is_coastal_checked,
                 "local": request.form.get("local")
             }
             
             try:
-                response = requests.get(forecast_url, params=params, timeout=15)
+                response = requests.get(BACKEND_FORECAST_URL, params=params, timeout=15)
                 
                 if response.status_code == 200:
                     weather_data = response.json()
@@ -180,7 +192,7 @@ def index():
                                   weather_data=weather_data, 
                                   error=error_message, 
                                   city_list=city_list,
-                                  is_coastal=is_coastal_checked)
+                                  )
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
