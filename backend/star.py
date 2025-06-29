@@ -130,6 +130,7 @@ def get_forecast(latitude: float, longitude: float, request: Request, forecast_d
             )
             #print(daily_entry)
             forecast_list.append(daily_entry)
+            
         
         self_link = Link(href=str(request.url), rel="self", type="GET")
         display_local = local if local else f"{latitude}, {longitude}"

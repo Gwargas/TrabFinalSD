@@ -146,7 +146,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- Rota Flask (Nenhuma mudança necessária aqui) ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     weather_data, error_message, city_list = None, None, None
