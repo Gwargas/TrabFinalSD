@@ -1,5 +1,3 @@
-# star.py - VERSÃO CORRIGIDA COM SENSACAO TERMICA DIARIA
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -37,7 +35,7 @@ class DailyForecast(BaseModel):
     uv_index_max: float
     precipitation_probability_max: float
     wave_height_max: Optional[float] = None
-    sensacao_termica: Optional[float] = None # Campo para a sensação térmica da primeira hora
+    sensacao_termica: Optional[float] = None
 
 class WeatherResponse(BaseModel):
     local: str
@@ -67,20 +65,20 @@ def obter_previsao(request_data: WeatherRequest):
         'latitude': request_data.latitude,
         'longitude': request_data.longitude,
         'daily': daily_params,
-        'hourly': 'apparent_temperature', # Pedimos a sensação térmica horária
+        'hourly': 'apparent_temperature',
         'timezone': 'auto',
         'forecast_days': forecast_days
     }
     
     try:
-        # Obter dados da API padrão
+        #API padrão(forecast)
         standard_response = requests.get(STANDARD_API_URL, params=standard_api_params, timeout=10)
         standard_response.raise_for_status()
         json_response = standard_response.json()
         standard_data = json_response.get('daily', {})
         hourly_data = json_response.get('hourly', {})
 
-        # Obter dados da API marítima se for costeira
+        #API marítima se for costeira
         marine_data = {}
         if request_data.is_coastal:
             marine_api_params = {
@@ -94,16 +92,14 @@ def obter_previsao(request_data: WeatherRequest):
             marine_response.raise_for_status()
             marine_data = marine_response.json().get('daily', {})
 
-        # Construir a lista de previsões diárias
+        #lista pras previsões dos dias entre 0-16
         forecast_list = []
         num_days = len(standard_data.get('time', []))
         apparent_temp_list = hourly_data.get('apparent_temperature', [])
 
         for i in range(num_days):
-            # O índice para a primeira hora do dia 'i' é i * 24
             hourly_index = i * 24
             
-            # Pega a sensação térmica para a primeira hora do dia
             sensacao = None
             if hourly_index < len(apparent_temp_list):
                 sensacao = apparent_temp_list[hourly_index]

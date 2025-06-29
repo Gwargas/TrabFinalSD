@@ -1,5 +1,3 @@
-# app.py - VERSÃO FINAL COM SELEÇÃO DE CIDADE INTERATIVA
-
 from flask import Flask, render_template_string, request
 import requests
 
